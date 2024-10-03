@@ -3,6 +3,9 @@ on:
   workflow_dispatch:
   push:
 
+env:
+  version: '7.5'
+
 jobs:
   build:
     runs-on: windows-latest
@@ -11,7 +14,7 @@ jobs:
     - uses: actions/checkout@master
       with:
         repository: cheat-engine/cheat-engine
-        ref: '7.5'
+        ref: ${{ env.version }}
 
     - uses: gcarreno/setup-lazarus@v3.2.15
       with:
@@ -29,7 +32,29 @@ jobs:
     
     - run: 7z a CE.7z ".\Cheat Engine\bin\*"
 
-    - uses: actions/upload-artifact@master
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
         path: CE.7z
         name: CE.7z
+        if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: CE.7z
+      - run: ls -R
+
+      # Create release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.version }}
+          name: v${{ env.version }}
+          prerelease: false
+          files: CE.7z
