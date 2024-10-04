@@ -20,15 +20,65 @@ jobs:
       with:
         lazarus-version: "2.2.2"
 
-#     - run: |
-#         if (-not (Test-Path lazarus-2.2.0-fpc-3.2.2-win64.exe)) {
-#             curl.exe -LO https://udomain.dl.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%202.2.0/lazarus-2.2.0-fpc-3.2.2-win64.exe
-#         }
-#         ./lazarus-2.2.0-fpc-3.2.2-win64.exe /verysilent
+    - name: prepare lazarus-386
+      run: |
+        $tempDir = Join-Path $Env:RUNNER_TEMP "lazarus-i386"
+        New-Item -ItemType Directory -Path $tempDir -Force
+        Push-Location $tempDir
+
+        # for extract installer
+        curl.exe -Lo innounp.rar https://downloads.sourceforge.net/project/innounp/innounp/innounp%200.50/innounp050.rar
+        7z x -spe -o"innounp" innounp.rar
+
+        curl.exe -Lo "lazarus-i386.exe" https://netactuate.dl.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%203.6/lazarus-3.6-fpc-3.2.2-cross-i386-win32-win64.exe
+        .\innounp\innounp.exe -x -dlazarus .\lazarus-i386.exe
+
+        Pop-Location
+
+    - name: install lazarus-386
+      # https://stackoverflow.com/questions/56234411/robocopy-causes-exit1-on-success
+      continue-on-error: true
+      run: robocopy $(Join-Path $Env:RUNNER_TEMP "lazarus-i386\lazarus\{app}") $(Join-Path $Env:RUNNER_TEMP 'installers\lazarus') /move /e
+
+    # https://github.com/cheat-engine/cheat-engine/issues/1851#issuecomment-933640130
+    - name: build lpi
+      run: |
+        lazbuild -B "Cheat Engine/speedhack/speedhack.lpi" --cpu=x86_64 --build-mode="64-bit"
+        lazbuild -B "Cheat Engine/luaclient/luaclient.lpi" --cpu=x86_64 --build-mode="Release 64"
+        lazbuild -B "Cheat Engine/VEHDebug/vehdebug.lpi" --cpu=x86_64 --build-mode="Release 64"
+
+        lazbuild -B "Cheat Engine/Tutorial/graphical/project1.lpi" --cpu=i386 --build-mode="Release 32"
+        lazbuild -B "Cheat Engine/Tutorial/tutorial.lpi" --cpu=i386 --build-mode="release 32-Bit"
+        lazbuild -B "Cheat Engine/speedhack/speedhack.lpi" --cpu=i386 --build-mode="32-bit"
+        lazbuild -B "Cheat Engine/luaclient/luaclient.lpi" --cpu=i386 --build-mode="Release 32"
+        lazbuild -B "Cheat Engine/VEHDebug/vehdebug.lpi" --cpu=i386 --build-mode="Release 32"
 
     - run: lazbuild -B "Cheat Engine/cheatengine.lpi" --cpu=x86_64 --build-mode="Release 64-Bit O4 AVX2"
 
-#     - run: ls -r '*.lpi' | % { lazbuild -B $_ --cpu=x86_64 --build-mode="Release 64-Bit O4 AVX2" }
+    - name: Setup msbuild
+      uses: microsoft/setup-msbuild@v2
+      with:
+        # vs-version: '[17.0,18.0)'
+        msbuild-architecture: x64
+
+    - name: build sln
+      run: |
+        # $solutions = ls 'Cheat Engine' -r '*.sln'
+        $solutions = ls 'Cheat Engine/tcclib/win32/tcc/tcc.sln'
+        $configurations = @('Output to 64 (Release)', 'Output to 32 (Release)')
+        $platforms = @('x64', 'Win32')
+        $toolset = 'v143'
+        
+        foreach ($solution in $solutions) {
+            foreach ($config in $configurations) {
+                foreach ($platform in $platforms) {
+                    msbuild $solution.FullName -t:Rebuild -p:Configuration=$config -p:Platform=$platform -p:PlatformToolset=$toolset
+                }
+            }
+        }
+
+    - name: delete debug file
+      run: Get-ChildItem '.\Cheat Engine\bin\*' -Include ('*.exp', '*.pdb', '*.dbg') | Remove-Item -Force
     
     - run: 7z a CE.7z ".\Cheat Engine\bin\*"
 
